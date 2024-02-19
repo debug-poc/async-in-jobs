@@ -33,19 +33,41 @@ The ActiveRecord connection pool has been set to 2 by default
 * Run `tmux`
 * Press `Ctrl-b` then `%` to split the terminal into two panes
 
+## Without AR Patching
+
 ### In the first pane
 * Open a rails console in one shell `./bin/rails c`
 * Run `Site.first.pages.recently_refreshed.count`. It will be 0
 * Run `Site.first.enqueue_refresh` to enqueue jobs to refresh pages
 
 ###  In the second pane
-* Run `bundle exec sidekiq -c 2` to start sidekiq with 2 threads
-* 2 jobs will be processed. Each will take around 5 seconds each. The log output shows the AR connection pool stats while executing each async job
-
+* Run `DB_POOL=25 bundle exec sidekiq -c 1` to start sidekiq with 1 thread
+* 2 jobs will be processed. Each will take around 5 seconds each. The log output shows the AR connection pool stats while executing each async job. It will also show warnings about connection being used outside with_connection
 
 ### In the rails console
 * Run `Site.first.pages.recently_refreshed.count`. It will be 40
 
 
+## With AR Patching
+
+### In the first pane
+* Run `Site.first.pages.recently_refreshed.count`. It will be 40
+* Run `Site.first.enqueue_refresh` to enqueue jobs to refresh pages
+
+###  In the second pane
+* Run `DB_POOL=5 AUTO_WRAP_AR=1 bundle exec sidekiq -c 2` to start sidekiq with 2 threads
+* 2 jobs will be processed. Each will take around 5 seconds each. The log output shows the AR connection pool stats while executing each async job. There will be no
+warnings about connection being used outside with_connection
+
+### In the rails console
+* Run `Site.first.pages.recently_refreshed.count`. It will be 80
+
 ## Video
 https://share.cleanshot.com/TYVtmTNb
+
+## Comparison
+
+| Scenario | Connection Pool Size | Sidekiq Threads | Time | Notes |
+| --- | --- | --- | --- |--- |
+| Without AR Patching | 25 | 1 | 10 seconds | Dead connections in connection pool|
+| With AR Patching | 5 | 2 | 5 seconds | No dead connections|

@@ -37,5 +37,6 @@ module AsyncInJobs
     # config.eager_load_paths << Rails.root.join("extras")
     #
     config.active_job.queue_adapter = :sidekiq
+    config.active_support.isolation_level = :fiber
   end
 end

@@ -37,40 +37,29 @@ class Sites::BulkRefresh < ApplicationRecord
     Sync do
       barrier = Async::Barrier.new
       internet = Async::HTTP::Internet.new
-      results = []
-      mutex = Mutex.new
 
-      # No ActiveRecord calls to be made inside the block. We want to use only one AR connection per job
       page_data.each do |id, url|
-        barrier.async do
-          result = {id: id}
+        barrier.async do |task|
           begin
             # Simulate a network delay
             sleep(rand(1..5))
             puts "ActiveRecord::Base.connection_pool.stat in async job for page #{id}: #{ActiveRecord::Base.connection_pool.stat}"
-            response = internet.get url
-            result.merge!(content: response.read, status: "success")
+            task.with_timeout(5) do
+              response = internet.get url
+              Sites::Page.update(
+                id,
+                content: response.read, refresh_status: "success", refreshed_at: Time.current, refresh_queued_at: nil
+              )
+            end
           rescue => e
-            result.merge!(status: "failed")
+            Sites::Page.update(id, refresh_status: "failed")
             Rails.logger.error "Failed to refresh page #{id} with error: #{e.message}"
             # Report error
           end
-          mutex.synchronize { results.push(result) }
         end
       end
 
       barrier.wait
-
-      results.each do |result|
-        if result[:status] == "success"
-          Sites::Page.update(
-            result[:id],
-            content: result[:content], refresh_status: "success", refreshed_at: Time.current, refresh_queued_at: nil
-          )
-        else
-          Sites::Page.update(result[:id], refresh_status: "failed")
-        end
-      end
     ensure
       internet&.close
     end
